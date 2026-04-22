@@ -7,14 +7,14 @@ using System.Threading.Tasks;
 
 public static class SignedClient
 {
-    private const string Key = "Insert your API Key here";
-    private const string Secret = "Insert your API secret here";
-    private const string Url = "Insert the target URL here";
+    internal const string Key = "Insert your API Key here";
+    internal const string Secret = "Insert your API secret here";
+    internal const string Url = "Insert the target URL here";
 
     private static readonly HttpClient Http = new HttpClient();
 
     public static Task<HttpResponseMessage> FetchWithSignatureAsync(
-        string apiKey, string secretKey, HttpMethod method, object body)
+        string apiKey, string secretKey, HttpMethod method, string url, object body)
     {
         var clientRequestId = Guid.NewGuid().ToString();
         var time = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
@@ -29,7 +29,7 @@ public static class SignedClient
             messageSignatureBase64 = Convert.ToBase64String(hash);
         }
 
-        var request = new HttpRequestMessage(method, Url);
+        var request = new HttpRequestMessage(method, url);
         request.Headers.Add("Client-Request-Id", clientRequestId);
         request.Headers.Add("Api-Key", apiKey);
         request.Headers.Add("Timestamp", time.ToString());
@@ -41,20 +41,5 @@ public static class SignedClient
         }
 
         return Http.SendAsync(request);
-    }
-
-    // example call
-    public static async Task Main()
-    {
-        try
-        {
-            var response = await FetchWithSignatureAsync(
-                Key, Secret, HttpMethod.Post, new { /* Request body */ });
-            // success!
-        }
-        catch (Exception)
-        {
-            // failed!
-        }
     }
 }
