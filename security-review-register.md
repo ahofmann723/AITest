@@ -120,17 +120,46 @@ by posting directly.
 **Fix:** re-validate password strength, field lengths, domain format, and required fields
 server-side (assume this is already the case in Dolibarr, but confirm).
 
-### 10. Response headers not assessable from source — *Info*
-I only had the HTML, so I could not evaluate `Content-Security-Policy`, `Strict-Transport-Security`,
-`X-Content-Type-Options`, `X-Frame-Options`/`frame-ancestors`, `Referrer-Policy`, or the session
-**cookie flags** (`Secure`, `HttpOnly`, `SameSite`). A CSP in particular would materially reduce the
-impact of finding #3. Please capture response headers (`curl -sSI` / browser dev-tools) for review.
+### 10. Response headers — *Confirmed (mixed)*
+Reviewed from the actual response headers.
+
+**Present / good:**
+| Header | Value |
+| --- | --- |
+| `X-Content-Type-Options` | `nosniff` |
+| `X-Frame-Options` | `SAMEORIGIN` (clickjacking) |
+| `Referrer-Policy` | `same-origin` |
+| `Cache-Control` | `no-store, no-cache, must-revalidate` (+ `Pragma`, `Expires`) — good for a form page |
+| `Server` | `Apache` — version suppressed at the server-header level (good; note the app still leaks 22.0.3 via #2) |
+
+**Missing / to fix:**
+- **`Content-Security-Policy` — absent (Medium).** This is the single most important gap here: a CSP
+  is the mitigating control for finding #3 (reflected parameters). Even a modest policy
+  (`default-src 'self'`, scripted `script-src` without `'unsafe-inline'` where feasible,
+  `frame-ancestors 'self'`, `object-src 'none'`, `base-uri 'self'`) would sharply reduce XSS impact.
+  Note the page uses inline `<script>` and inline event patterns, so a strict `script-src` will need
+  nonces/hashes — plan for that.
+- **`Strict-Transport-Security` — absent (Low–Medium).** No HSTS means no protection against
+  SSL-strip / protocol-downgrade. Add e.g. `Strict-Transport-Security: max-age=31536000; includeSubDomains`
+  (consider `preload` once you're confident all subdomains are HTTPS — relevant since instances are
+  provisioned as `*.brandnube.com`).
+- **`Permissions-Policy` — absent (Low).** Optional hardening; lock down features you don't use
+  (`camera=(), microphone=(), geolocation=()`, etc.).
+
+**Cookie flags — still unconfirmed.** This particular response contained **no `Set-Cookie`** header
+(the session cookie was likely already set on an earlier request). I therefore still can't verify
+`Secure` / `HttpOnly` / `SameSite` on the Dolibarr session cookie (`DOLSESSID…`). Capture the headers
+of the first/session-establishing request (fresh browser, no cookies) and confirm the session cookie
+is `Secure; HttpOnly; SameSite=Lax` (or `Strict`).
 
 ---
 
 ## Positive observations
 - CSRF protection is present: an `anti-csrf-token` meta and a matching `token` hidden field are
   emitted, and the form uses `POST` (not `GET`).
+- Good baseline response headers: `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`,
+  `Referrer-Policy: same-origin`, strong `Cache-Control`/`Pragma` no-store, and a version-suppressed
+  `Server: Apache` banner.
 - The password field sets `autocomplete="new-password"`, `spellcheck="false"`, `autocapitalize="off"`.
 - Country/TLD `select2` rendering references `dol_escape_htmltag(...)` sanitization for `data-html`;
   those option sets are server-controlled (country list, Basic/Premium tiers), not user input, so the
@@ -139,11 +168,13 @@ impact of finding #3. Please capture response headers (`curl -sSI` / browser dev
 
 ## Priority order for remediation
 1. #4 (IDOR / tamperable IDs) and #6 (public file-manager/CKEditor) — highest potential impact.
-2. #3 (reflected XSS) — verify and fix encoding; add CSP (#10).
-3. #8 (anti-automation), #5 (`extcss`), #7 (`viewimage.php`).
+2. #3 (reflected XSS) — verify and fix encoding; **add a CSP (#10)**, the main missing mitigation.
+3. #8 (anti-automation), #5 (`extcss`), #7 (`viewimage.php`), **add HSTS (#10)**.
 4. #1, #2, #9 — hardening / info-leak cleanup.
 
 ## What I could not do here
 - No dynamic/active testing (injection, IDOR probing, endpoint reachability) was performed — those
   require authorized testing against your own infrastructure.
-- No response-header or TLS review (HTML only). Provide headers and I'll extend this report.
+- Response headers were reviewed (#10). Still outstanding: **session cookie flags** — this response
+  had no `Set-Cookie`; capture the session-establishing request to confirm `Secure/HttpOnly/SameSite`.
+- No TLS/cipher/certificate review was performed.
