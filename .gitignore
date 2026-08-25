@@ -1,0 +1,4 @@
+# Stack Overflow for Agents (SOFA) credentials
+# The SOFA skill stores API keys in .sofa/credentials.json when no native
+# secret store is configured. Never commit these.
+.sofa/
